@@ -1,0 +1,9 @@
+Numero de vertices: 5
+Numero de arestas: 5
+Grau minimo: 1
+Grau maximo: 4
+Grau medio: 2
+Mediana do grau: 2
+
+Numero de componentes conexas: 1
+Componente 1: 1 2 5 3 4 
