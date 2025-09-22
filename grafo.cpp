@@ -327,6 +327,42 @@
             out.close();
         }
 
+        int diametroAproximado() const {
+        auto bfsMaisDistante = [&](int origem) {
+            vector<int> dist(n + 1, -1);
+            queue<int> q;
+            dist[origem] = 0;
+            q.push(origem);
+            int ultimo = origem;
+            while (!q.empty()) {
+                int u = q.front(); q.pop();
+                ultimo = u;
+                if (tipo == LISTA) {
+                    for (Node* curr = adjList[u]; curr; curr = curr->next) {
+                        int v = curr->v;
+                        if (dist[v] == -1) {
+                            dist[v] = dist[u] + 1;
+                            q.push(v);
+                        }
+                    }
+                } else {
+                    for (int v = 1; v <= n; v++) {
+                        if (adjMatrix[u][v] && dist[v] == -1) {
+                            dist[v] = dist[u] + 1;
+                            q.push(v);
+                        }
+                    }
+                }
+            }
+            return pair<int,int>(ultimo, dist[ultimo]);
+        };
+
+        int inicio = 1;
+        pair<int, int> res1 = bfsMaisDistante(inicio);
+        pair<int, int> res2 = bfsMaisDistante(res1.first);
+        return res2.second;
+    }
+
         ~Grafo() {
             if (tipo == LISTA) {
                 for (int i = 1; i <= n; i++) {
