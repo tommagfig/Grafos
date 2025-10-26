@@ -19,8 +19,8 @@ enum Representacao { LISTA, MATRIZ };
 
 struct IGrafoRep {
     virtual ~IGrafoRep() = default;
-    virtual void add_edge(int u, int v) = 0;
-    virtual void neighbors(int u, const function<void(int)>& f) const = 0;
+    virtual void add_edge(int u, int v, double w) = 0;
+    virtual void neighbors(int u, const function<void(int, double)>& f) const = 0;
     virtual int degree(int u) const = 0;
     virtual bool edge_exists(int u, int v) const = 0;
     virtual int n_vertices() const = 0;
@@ -29,9 +29,75 @@ struct IGrafoRep {
 // Nó da lista de adjacência
 struct Node {
     int v;
+    double w;
     Node* next;
-    Node(int vert, Node* nxt = nullptr) : v(vert), next(nxt) {}
+    Node(int vert, double peso, Node* nxt = nullptr) : v(vert), w(peso), next(nxt) {}
 };
+
+class MinHeap {
+private:
+    vector<pair<int,double>> heap; // (vértice, distância)
+    vector<int> pos;               // posição de cada vértice no heap (-1 se não estiver)
+
+    void swapNodes(int i, int j) {
+        swap(heap[i], heap[j]);
+        pos[heap[i].first] = i;
+        pos[heap[j].first] = j;
+    }
+
+    void siftUp(int i) {
+        while (i > 0) {
+            int pai = (i - 1) / 2;
+            if (heap[pai].second <= heap[i].second) break;
+            swapNodes(pai, i);
+            i = pai;
+        }
+    }
+
+    void siftDown(int i) {
+        int size = heap.size();
+        while (true) {
+            int esq = 2*i + 1, dir = 2*i + 2, menor = i;
+            if (esq < size && heap[esq].second < heap[menor].second) menor = esq;
+            if (dir < size && heap[dir].second < heap[menor].second) menor = dir;
+            if (menor == i) break;
+            swapNodes(i, menor);
+            i = menor;
+        }
+    }
+
+public:
+    explicit MinHeap(int n) : pos(n + 1, -1) {}
+
+    bool empty() const { return heap.empty(); }
+
+    void push(int v, double dist) {
+        if (pos[v] != -1) { // já está no heap
+            if (dist < heap[pos[v]].second) {
+                heap[pos[v]].second = dist;
+                siftUp(pos[v]);
+            }
+            return;
+        }
+        heap.push_back({v, dist});
+        pos[v] = heap.size() - 1;
+        siftUp(pos[v]);
+    }
+
+    pair<int,double> extract_min() {
+        if (heap.empty()) return {-1, 1e18};
+        auto minNode = heap[0];
+        pos[minNode.first] = -1;
+        if (heap.size() > 1) {
+            heap[0] = heap.back();
+            pos[heap[0].first] = 0;
+        }
+        heap.pop_back();
+        if (!heap.empty()) siftDown(0);
+        return minNode;
+    }
+};
+
 
 //lista de adjacência
 class ListaRep : public IGrafoRep {
@@ -41,14 +107,14 @@ private:
 public:
     explicit ListaRep(int n) : adj(n + 1, nullptr) {}
 
-    void add_edge(int u, int v) override {
-        adj[u] = new Node(v, adj[u]);
-        adj[v] = new Node(u, adj[v]);
+    void add_edge(int u, int v, double w) override {
+        adj[u] = new Node(v, w, adj[u]);
+        adj[v] = new Node(u, w, adj[v]);
     }
 
-    void neighbors(int u, const function<void(int)>& f) const override {
+    void neighbors(int u, const function<void(int,double)>& f) const override {
         for (Node* curr = adj[u]; curr != nullptr; curr = curr->next) {
-            f(curr->v);
+            f(curr->v, curr->w);
         }
     }
 
@@ -83,27 +149,27 @@ public:
 //matriz de adjacência
 class MatrizRep : public IGrafoRep {
 private:
-    vector<vector<uint8_t>> mat;
+    vector<vector<double>> mat;
 public:
-    explicit MatrizRep(int n) : mat(n + 1, vector<uint8_t>(n + 1, 0)) {}
-    void add_edge(int u, int v) override {
-        mat[u][v] = 1;
-        mat[v][u] = 1;
+    explicit MatrizRep(int n) : mat(n + 1, vector<double>(n + 1, 0.0)) {}
+    void add_edge(int u, int v, double w) override {
+        mat[u][v] = w;
+        mat[v][u] = w;
     }
-    void neighbors(int u, const function<void(int)>& f) const override {
+    void neighbors(int u, const function<void(int, double)>& f) const override {
         int n = (int)mat[u].size() - 1;
         for (int v = 1; v <= n; ++v) {
-            if (mat[u][v]) f(v);
+            if (mat[u][v] != 0.0) f(v, mat[u][v]);
         }
     }
     int degree(int u) const override {
         int cnt = 0;
         int n = (int)mat[u].size() - 1;
-        for (int v = 1; v <= n; ++v) if (mat[u][v]) ++cnt;
+        for (int v = 1; v <= n; ++v) if (mat[u][v] != 0.0) ++cnt;
         return cnt;
     }
     bool edge_exists(int u, int v) const override {
-        return mat[u][v] != 0;
+        return mat[u][v] != 0.0;
     }
     int n_vertices() const override { return (int)mat.size() - 1; }
 };
@@ -121,10 +187,10 @@ public:
         else rep = make_unique<MatrizRep>(vertices);
     }
 
-    void adicionarAresta(int u, int v) {
+    void adicionarAresta(int u, int v, double w) {
         if (u < 1 || u > n || v < 1 || v > n) return;
         if (!rep->edge_exists(u,v)) {
-            rep->add_edge(u, v);
+            rep->add_edge(u, v, w);
             ++m;
         }
     }
@@ -136,10 +202,11 @@ public:
             exit(1);
         }
         int vertices, u, v;
+        double w;
         entrada >> vertices;
         Grafo g(vertices, r);
-        while (entrada >> u >> v) {
-            g.adicionarAresta(u, v);
+        while (entrada >> u >> v >> w) {
+            g.adicionarAresta(u, v, w);
         }
         entrada.close();
         return g;
@@ -165,7 +232,7 @@ public:
         q.push(origem);
         while (!q.empty()) {
             int u = q.front(); q.pop();
-            rep->neighbors(u, [&](int v){
+            rep->neighbors(u, [&](int v, double peso) {
                 if (dist[v] == -1) {
                     dist[v] = dist[u] + 1;
                     q.push(v);
@@ -185,7 +252,7 @@ public:
             q.push(i);
             while (!q.empty()) {
                 int u = q.front(); q.pop();
-                rep->neighbors(u, [&](int v){
+                rep->neighbors(u, [&](int v, double peso) {
                     if (dist[v] == -1) {
                         dist[v] = dist[u] + 1;
                         diam = max(diam, dist[v]);
@@ -209,11 +276,11 @@ public:
                 while (!q.empty()) {
                     int u = q.front(); q.pop();
                     comp.push_back(u);
-                    rep->neighbors(u, [&](int v){
+                    rep->neighbors(u, [&](int v, double peso) {
                         if (!visitado[v]) { visitado[v] = 1; q.push(v); }
                     });
                 }
-                componentes.push_back(move(comp));
+                componentes.push_back(std::move(comp));
             }
         }
         sort(componentes.begin(), componentes.end(),
@@ -271,42 +338,52 @@ public:
 
         while (!q.empty()) {
             int u = q.front(); q.pop();
-            rep->neighbors(u, [&](int v){
+            vector<int> vizinhos;
+            rep->neighbors(u, [&](int v, double peso) { vizinhos.push_back(v); });
+            sort(vizinhos.begin(), vizinhos.end());
+
+            for (int v : vizinhos) {
                 if (nivel[v] == -1) {
                     pai[v] = u;
                     nivel[v] = nivel[u] + 1;
                     q.push(v);
                 }
-            });
+            }
         }
 
         ofstream out(arquivo);
         out << "BFS - Arvore de busca a partir do vertice " << origem << "\n";
         out << "Vertice\tPai\tNivel\n";
-        for (int i = 1; i <= n; ++i) out << i << "\t\t" << pai[i] << "\t" << nivel[i] << "\n";
+        for (int i = 1; i <= n; ++i)
+            out << i << "\t\t" << pai[i] << "\t" << nivel[i] << "\n";
         out.close();
     }
+
 
     // DFS iterativa que escreve pai e nivel em arquivo
     void DFS(int origem, const string& arquivo) const {
         vector<int> nivel(n + 1, -1);
         vector<int> pai(n + 1, 0);
-        stack<pair<int,int>> s;
-        s.push({origem, 0});
-        pai[origem] = 0;
+
+        stack<tuple<int,int,int>> s;
+        s.push({origem, 0, 0});
 
         while (!s.empty()) {
-            auto [u, d] = s.top(); s.pop();
+            auto [u, p, d] = s.top(); s.pop();
+
             if (nivel[u] != -1) continue;
+
+            pai[u] = p;
             nivel[u] = d;
 
             vector<int> vizinhos;
-            rep->neighbors(u, [&](int v){ vizinhos.push_back(v); });
+            rep->neighbors(u, [&](int v, double peso){ vizinhos.push_back(v); });
+
+            sort(vizinhos.begin(), vizinhos.end());
             for (auto it = vizinhos.rbegin(); it != vizinhos.rend(); ++it) {
                 int v = *it;
                 if (nivel[v] == -1) {
-                    pai[v] = u;
-                    s.push({v, d + 1});
+                    s.push({v, u, d + 1});
                 }
             }
         }
@@ -317,6 +394,7 @@ public:
         for (int i = 1; i <= n; ++i) out << i << "\t\t" << pai[i] << "\t" << nivel[i] << "\n";
         out.close();
     }
+
 
     // diametro aproximado por duas BFS (heurística)
     int diametroAproximado() const {
@@ -329,7 +407,7 @@ public:
             while (!q.empty()) {
                 int u = q.front(); q.pop();
                 ultimo = u;
-                rep->neighbors(u, [&](int v){
+                rep->neighbors(u, [&](int v, double peso) {
                     if (dist[v] == -1) {
                         dist[v] = dist[u] + 1;
                         q.push(v);
@@ -344,10 +422,183 @@ public:
         return r2.second;
     }
 
-    
+    // Dijkstra com vetor simples (O(n²))
+    void dijkstraVetor(int origem, const string& arquivo) const {
+        const double INF = 1e18;
+        vector<double> dist(n + 1, INF);
+        vector<int> pai(n + 1, -1);
+        vector<bool> visitado(n + 1, false);
+
+        // Verifica se há peso negativo
+        bool negativo = false;
+        for (int u = 1; u <= n && !negativo; ++u) {
+            rep->neighbors(u, [&](int v, double peso) {
+                if (peso < 0) negativo = true;
+            });
+        }
+        if (negativo) {
+            cerr << "Erro: o grafo possui pesos negativos. Dijkstra não é aplicável.\n";
+            return;
+        }
+
+        dist[origem] = 0.0;
+
+        for (int i = 1; i <= n; ++i) {
+            // Encontra vértice não visitado com menor distância
+            int u = -1;
+            double menor = INF;
+            for (int v = 1; v <= n; ++v) {
+                if (!visitado[v] && dist[v] < menor) {
+                    menor = dist[v];
+                    u = v;
+                }
+            }
+
+            if (u == -1) break; // todos alcançáveis já processados
+            visitado[u] = true;
+
+            // Relaxa arestas de u
+            rep->neighbors(u, [&](int v, double peso) {
+                if (!visitado[v] && dist[u] + peso < dist[v]) {
+                    dist[v] = dist[u] + peso;
+                    pai[v] = u;
+                }
+            });
+        }
+
+        // Gera arquivo de saída
+        //ofstream out(arquivo);
+        //out << fixed << setprecision(2);
+        //out << "Dijkstra (vetor) - Origem: " << origem << "\n";
+        //out << "Vertice\tDistancia\tPai\tCaminho\n";
+        //for (int i = 1; i <= n; ++i) {
+            //if (dist[i] == INF) {
+                //out << i << "\tInfinito\t" << pai[i] << "\tN/A\n";
+                //continue;
+            //}
+            //out << i << "\t" << dist[i] << "\t\t" << pai[i] << "\t";
+
+            // Reconstrói caminho
+            //vector<int> caminho;
+            //for (int v = i; v != -1; v = pai[v])
+                //caminho.push_back(v);
+            //reverse(caminho.begin(), caminho.end());
+            //for (size_t j = 0; j < caminho.size(); ++j) {
+                //out << caminho[j];
+                //if (j + 1 < caminho.size()) out << " -> ";
+            //}
+            //out << "\n";
+        //}
+        //out.close();
+    }
+
+    void dijkstraHeap(int origem, const string& arquivo) const {
+        vector<double> dist(n + 1, 1e18);
+        vector<int> pai(n + 1, -1);
+        vector<bool> visitado(n + 1, false);
+        MinHeap heap(n);
+
+        // inicializa
+        dist[origem] = 0.0;
+        heap.push(origem, 0.0);
+
+        while (!heap.empty()) {
+            auto minNode = heap.extract_min();
+            int u = minNode.first;
+            if (visitado[u]) continue;
+            visitado[u] = true;
+
+            rep->neighbors(u, [&](int v, double peso) {
+                if (peso < 0) {
+                    cerr << "Erro: peso negativo detectado entre " << u << " e " << v << endl;
+                    throw runtime_error("Dijkstra não suporta pesos negativos.");
+                }
+                if (!visitado[v] && dist[u] + peso < dist[v]) {
+                    dist[v] = dist[u] + peso;
+                    pai[v] = u;
+                    heap.push(v, dist[v]);
+                }
+            });
+        }
+
+        // salva resultados
+        //ofstream out(arquivo);
+        //out << fixed << setprecision(2);
+        //out << "Dijkstra (heap) - Origem: " << origem << "\n";
+        //out << "Vertice\tDistancia\tPai\tCaminho\n";
+
+        //for (int i = 1; i <= n; ++i) {
+            //out << i << "\t" << dist[i] << "\t\t" << pai[i] << "\t";
+            //if (dist[i] == 1e18) { out << "(inacessível)\n"; continue; }
+
+            // reconstrói caminho
+            //vector<int> caminho;
+            //for (int v = i; v != -1; v = pai[v]) caminho.push_back(v);
+            //reverse(caminho.begin(), caminho.end());
+            //for (size_t j = 0; j < caminho.size(); ++j) {
+                //out << caminho[j];
+                //if (j + 1 < caminho.size()) out << " -> ";
+            //}
+            //out << "\n";
+        //}
+
+        //out.close();
+    }
+
 };
 
-// ---------- main de exemplo (idêntico ao anterior) ----------
+// ---------- main de exemplo ----------
 int main() {
-    
+    // Lê o grafo do arquivo
+    //Grafo g = Grafo::lerDeArquivo("grafo_W_5.txt", LISTA);
+
+    //int origem = 10;
+
+    //cout << "Executando Dijkstra (heap) a partir do vertice " << origem << "...\n";
+
+    // Executa Dijkstra com heap e salva resultado em arquivo
+    //g.dijkstraHeap(origem, "resultado_dijkstra_heap.txt");
+
+
+    // Lê o grafo
+    Grafo g = Grafo::lerDeArquivo("grafo_W_2.txt", LISTA);
+    cout << "Grafo carregado."<< "\n";
+
+    // Quantos vértices aleatórios testar
+    int k = 100;
+    int totalVertices = 25000; // ajuste conforme o grafo real
+    vector<int> vertices;
+
+    // Gera k vértices aleatórios distintos entre 1 e totalVertices
+    mt19937 rng(std::chrono::steady_clock::now().time_since_epoch().count());
+    uniform_int_distribution<int> dist(1, totalVertices);
+
+    for (int i = 0; i < k; ++i) {
+        vertices.push_back(dist(rng));
+    }
+
+    double tempoVetorTotal = 0.0, tempoHeapTotal = 0.0;
+
+    for (int origem : vertices) {
+        // Mede tempo para Dijkstra com vetor
+        auto ini = std::chrono::high_resolution_clock::now();
+        g.dijkstraVetor(origem, "");
+        auto fim = std::chrono::high_resolution_clock::now();
+        tempoVetorTotal += std::chrono::duration<double, std::milli>(fim - ini).count();
+
+        // Mede tempo para Dijkstra com heap
+        ini = std::chrono::high_resolution_clock::now();
+        g.dijkstraHeap(origem, "");
+        fim = std::chrono::high_resolution_clock::now();
+        tempoHeapTotal += std::chrono::duration<double, std::milli>(fim - ini).count();
+    }
+
+    cout << fixed << setprecision(3);
+    cout << "\n==== RESULTADOS MÉDIOS ====\n";
+    cout << "Número de execuções (k): " << k << "\n";
+    cout << "Tempo médio (Dijkstra vetor): " << (tempoVetorTotal / k) << " ms\n";
+    cout << "Tempo médio (Dijkstra heap):  " << (tempoHeapTotal / k) << " ms\n";
+    cout << "Aceleração (vetor / heap):   " << (tempoVetorTotal / tempoHeapTotal) << "x\n";
+
+    return 0;
 }
