@@ -714,7 +714,7 @@ int main() {
         "Alan M. Turing",
         "J. B. Kruskal",
         "Jon M. Kleinberg",
-        "Eva Tardos",
+        "Éva Tardos",
         "Daniel R. Figueiredo"
     };
 
@@ -757,7 +757,7 @@ int main() {
 
         vector<int> caminho = g.reconstruirCaminho(destino, pais);
         for (size_t i = 0; i < caminho.size(); ++i) {
-            cout << caminho[i];
+            cout << mapa.getNome(caminho[i]);
             if (i + 1 < caminho.size()) cout << " -> ";
         }
         cout << "\n\n";
