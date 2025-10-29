@@ -13,6 +13,7 @@
 #include <chrono>
 #include <memory>
 #include <cstdint>
+#include <map>
 using namespace std;
 
 enum Representacao { LISTA, MATRIZ };
@@ -369,7 +370,11 @@ public:
         s.push({origem, 0, 0});
 
         while (!s.empty()) {
-            auto [u, p, d] = s.top(); s.pop();
+            auto t = s.top();
+            s.pop();
+            int u = std::get<0>(t);
+            int p = std::get<1>(t);
+            int d = std::get<2>(t);
 
             if (nivel[u] != -1) continue;
 
@@ -545,6 +550,101 @@ public:
         //out.close();
     }
 
+    pair<vector<double>, vector<int>> dijkstraComResultado(int origem) const {
+        const double INF = 1e18;
+        vector<double> dist(n + 1, INF);
+        vector<int> pai(n + 1, -1);
+        vector<bool> visitado(n + 1, false);
+        MinHeap heap(n);
+
+        dist[origem] = 0.0;
+        heap.push(origem, 0.0);
+
+        while (!heap.empty()) {
+            auto minNode = heap.extract_min();
+            int u = minNode.first;
+            if (visitado[u]) continue;
+            visitado[u] = true;
+
+            rep->neighbors(u, [&](int v, double peso) {
+                if (!visitado[v] && dist[u] + peso < dist[v]) {
+                    dist[v] = dist[u] + peso;
+                    pai[v] = u;
+                    heap.push(v, dist[v]);
+                }
+            });
+        }
+
+        return {dist, pai};
+    }
+
+    // Reconstrói o caminho do destino até a origem
+    vector<int> reconstruirCaminho(int destino, const vector<int>& pai) const {
+        vector<int> caminho;
+        for (int v = destino; v != -1; v = pai[v]) {
+            caminho.push_back(v);
+        }
+        reverse(caminho.begin(), caminho.end());
+        return caminho;
+    }
+};
+
+// Classe para gerenciar o mapeamento nome → vértice
+class MapeamentoNomes {
+private:
+    map<string, int> nomeParaVertice;
+    map<int, string> verticeParaNome;
+
+public:
+    // Lê o arquivo de mapeamento (formato: "id,Nome Completo")
+    void lerMapeamento(const string& arquivo) {
+        ifstream entrada(arquivo);
+        if (!entrada.is_open()) {
+            cerr << "Erro ao abrir arquivo de mapeamento: " << arquivo << endl;
+            exit(1);
+        }
+
+        string linha;
+        while (getline(entrada, linha)) {
+            // Encontra a posição da vírgula
+            size_t pos = linha.find(',');
+            if (pos == string::npos) continue;
+
+            // Extrai ID e nome
+            int id = stoi(linha.substr(0, pos));
+            string nome = linha.substr(pos + 1);
+
+            // Remove espaços em branco do início e fim do nome
+            nome.erase(0, nome.find_first_not_of(" \t\r\n"));
+            nome.erase(nome.find_last_not_of(" \t\r\n") + 1);
+
+            nomeParaVertice[nome] = id;
+            verticeParaNome[id] = nome;
+        }
+
+        entrada.close();
+        cout << "Mapeamento carregado: " << nomeParaVertice.size() << " pesquisadores." << endl;
+    }
+
+    int getVertice(const string& nome) const {
+        auto it = nomeParaVertice.find(nome);
+        if (it != nomeParaVertice.end()) {
+            return it->second;
+        }
+        return -1; // Não encontrado
+    }
+
+    string getNome(int vertice) const {
+        auto it = verticeParaNome.find(vertice);
+        if (it != verticeParaNome.end()) {
+            return it->second;
+        }
+        return "Desconhecido";
+    }
+
+    bool existe(const string& nome) const {
+        return nomeParaVertice.find(nome) != nomeParaVertice.end();
+    }
 };
 
 // ---------- main de exemplo ----------
@@ -561,44 +661,107 @@ int main() {
 
 
     // Lê o grafo
-    Grafo g = Grafo::lerDeArquivo("grafo_W_2.txt", LISTA);
-    cout << "Grafo carregado."<< "\n";
+    // Grafo g = Grafo::lerDeArquivo("grafo_W_2.txt", LISTA);
+    // cout << "Grafo carregado."<< "\n";
 
-    // Quantos vértices aleatórios testar
-    int k = 100;
-    int totalVertices = 25000; // ajuste conforme o grafo real
-    vector<int> vertices;
+    // // Quantos vértices aleatórios testar
+    // int k = 100;
+    // int totalVertices = 25000; // ajuste conforme o grafo real
+    // vector<int> vertices;
 
-    // Gera k vértices aleatórios distintos entre 1 e totalVertices
-    mt19937 rng(std::chrono::steady_clock::now().time_since_epoch().count());
-    uniform_int_distribution<int> dist(1, totalVertices);
+    // // Gera k vértices aleatórios distintos entre 1 e totalVertices
+    // mt19937 rng(std::chrono::steady_clock::now().time_since_epoch().count());
+    // uniform_int_distribution<int> dist(1, totalVertices);
 
-    for (int i = 0; i < k; ++i) {
-        vertices.push_back(dist(rng));
+    // for (int i = 0; i < k; ++i) {
+    //     vertices.push_back(dist(rng));
+    // }
+
+    // double tempoVetorTotal = 0.0, tempoHeapTotal = 0.0;
+
+    // for (int origem : vertices) {
+    //     // Mede tempo para Dijkstra com vetor
+    //     auto ini = std::chrono::high_resolution_clock::now();
+    //     g.dijkstraVetor(origem, "");
+    //     auto fim = std::chrono::high_resolution_clock::now();
+    //     tempoVetorTotal += std::chrono::duration<double, std::milli>(fim - ini).count();
+
+    //     // Mede tempo para Dijkstra com heap
+    //     ini = std::chrono::high_resolution_clock::now();
+    //     g.dijkstraHeap(origem, "");
+    //     fim = std::chrono::high_resolution_clock::now();
+    //     tempoHeapTotal += std::chrono::duration<double, std::milli>(fim - ini).count();
+    // }
+
+    // cout << fixed << setprecision(3);
+    // cout << "\n==== RESULTADOS MÉDIOS ====\n";
+    // cout << "Número de execuções (k): " << k << "\n";
+    // cout << "Tempo médio (Dijkstra vetor): " << (tempoVetorTotal / k) << " ms\n";
+    // cout << "Tempo médio (Dijkstra heap):  " << (tempoHeapTotal / k) << " ms\n";
+    // cout << "Aceleração (vetor / heap):   " << (tempoVetorTotal / tempoHeapTotal) << "x\n";
+
+    // Carrega o mapeamento de nomes
+    MapeamentoNomes mapa;
+    mapa.lerMapeamento("rede_colaboracao_vertices.txt");
+
+    // Carrega o grafo
+    Grafo g = Grafo::lerDeArquivo("rede_colaboracao.txt", LISTA);
+    cout << "Grafo carregado.\n\n";
+
+    // Define os pesquisadores
+    string origem_nome = "Edsger W. Dijkstra";
+    vector<string> destinos_nomes = {
+        "Alan M. Turing",
+        "J. B. Kruskal",
+        "Jon M. Kleinberg",
+        "Éva Tardos",
+        "Daniel R. Figueiredo"
+    };
+
+    // Verifica se a origem existe
+    if (!mapa.existe(origem_nome)) {
+        cerr << "Erro: Pesquisador de origem '" << origem_nome << "' não encontrado!" << endl;
+        return 1;
     }
 
-    double tempoVetorTotal = 0.0, tempoHeapTotal = 0.0;
+    int origem = mapa.getVertice(origem_nome);
+    cout << "Origem: " << origem_nome << " (vértice " << origem << ")\n\n";
 
-    for (int origem : vertices) {
-        // Mede tempo para Dijkstra com vetor
-        auto ini = std::chrono::high_resolution_clock::now();
-        g.dijkstraVetor(origem, "");
-        auto fim = std::chrono::high_resolution_clock::now();
-        tempoVetorTotal += std::chrono::duration<double, std::milli>(fim - ini).count();
+    // Executa Dijkstra uma vez a partir da origem
+    auto resultado = g.dijkstraComResultado(origem);
+    const auto& distancias = resultado.first;
+    const auto& pais = resultado.second;
 
-        // Mede tempo para Dijkstra com heap
-        ini = std::chrono::high_resolution_clock::now();
-        g.dijkstraHeap(origem, "");
-        fim = std::chrono::high_resolution_clock::now();
-        tempoHeapTotal += std::chrono::duration<double, std::milli>(fim - ini).count();
+    // Para cada destino, exibe distância e caminho
+    cout << "===== RESULTADOS =====\n\n";
+    
+    for (const string& destino_nome : destinos_nomes) {
+        cout << "Destino: " << destino_nome << "\n";
+        
+        if (!mapa.existe(destino_nome)) {
+            cout << "  >> Pesquisador não encontrado no mapeamento.\n\n";
+            continue;
+        }
+
+        int destino = mapa.getVertice(destino_nome);
+        double dist = distancias[destino];
+
+        if (dist >= 1e17) {
+            cout << "  >> Não há caminho entre " << origem_nome << " e " << destino_nome << "\n\n";
+            continue;
+        }
+
+        cout << "  Vértice: " << destino << "\n";
+        cout << "  Distância: " << fixed << setprecision(2) << dist << "\n";
+        cout << "  Caminho: ";
+
+        vector<int> caminho = g.reconstruirCaminho(destino, pais);
+        for (size_t i = 0; i < caminho.size(); ++i) {
+            cout << mapa.getNome(caminho[i]);
+            if (i + 1 < caminho.size()) cout << " -> ";
+        }
+        cout << "\n\n";
     }
-
-    cout << fixed << setprecision(3);
-    cout << "\n==== RESULTADOS MÉDIOS ====\n";
-    cout << "Número de execuções (k): " << k << "\n";
-    cout << "Tempo médio (Dijkstra vetor): " << (tempoVetorTotal / k) << " ms\n";
-    cout << "Tempo médio (Dijkstra heap):  " << (tempoHeapTotal / k) << " ms\n";
-    cout << "Aceleração (vetor / heap):   " << (tempoVetorTotal / tempoHeapTotal) << "x\n";
 
     return 0;
 }
