@@ -1,0 +1,6 @@
+Dijkstra (vetor) - Origem: 1
+Vertice	Distancia	Pai	Caminho
+1	0.00		-1	1
+2	1.50		1	1 -> 2
+3	2.00		4	1 -> 4 -> 3
+4	1.20		1	1 -> 4
